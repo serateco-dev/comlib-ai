@@ -2,6 +2,8 @@
 // 페이징 관련 구조체
 package dto
 
+import "time"
+
 // PageRequest 페이징 요청 구조체
 type PageRequest struct {
 	Page     int `json:"page" form:"page" binding:"min=1"`
@@ -21,7 +23,7 @@ type PageInfo struct {
 
 // PagedApiResponse 페이징된 API 응답 구조체
 type PagedApiResponse[T any] struct {
-	ApiResponse[[]T]
+	ApiResponseGeneric[[]T]
 	PageInfo PageInfo `json:"pageInfo"`
 }
 
@@ -102,15 +104,16 @@ func NewPageInfo(page, pageSize int, totalCount int64) PageInfo {
 // NewPagedResponse 페이징된 응답 생성
 func NewPagedResponse[T any](data []T, pageInfo PageInfo, message ...string) *PagedApiResponse[T] {
 	response := &PagedApiResponse[T]{
-		ApiResponse: ApiResponse[[]T]{
+		ApiResponseGeneric: ApiResponseGeneric[[]T]{
+			Success:   true,
 			Data:      data,
-			Timestamp: NewSuccessResponse(data).Timestamp,
+			Timestamp: time.Now(),
 		},
 		PageInfo: pageInfo,
 	}
 
 	if len(message) > 0 {
-		response.ApiResponse.Message = message[0]
+		response.ApiResponseGeneric.Message = message[0]
 	}
 
 	return response
