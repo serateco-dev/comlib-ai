@@ -10,12 +10,20 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// Config JWT 설정 구조체
+type Config struct {
+	SecretKey              string
+	AccessTokenExpiration  time.Duration
+	RefreshTokenExpiration time.Duration
+	Issuer                 string
+}
+
 // JWTUtil JWT 유틸리티 구조체
 type JWTUtil struct {
-	SecretKey        string
-	Expiration       time.Duration
-	RefreshExpiration time.Duration
-	Issuer           string
+	SecretKey             string
+	AccessTokenExpiration time.Duration
+	RefreshExpiration     time.Duration
+	Issuer                string
 }
 
 // Claims JWT 클레임 구조체
@@ -33,17 +41,34 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// TokenClaims 토큰 생성용 클레임 구조체
+type TokenClaims struct {
+	UserNo        int64
+	UserID        string
+	ServiceID     string
+	Role          string
+	NickName      string
+	Provider      string
+	AccessibleAPI []string
+}
+
+// RefreshTokenClaims 리프레시 토큰 클레임 구조체
+type RefreshTokenClaims struct {
+	UserNo int64
+	UserID string
+}
+
 // NewJWTUtil JWT 유틸리티 생성
-func NewJWTUtil(secretKey string, expiration, refreshExpiration time.Duration, issuer string) *JWTUtil {
+func NewJWTUtil(config Config) *JWTUtil {
 	return &JWTUtil{
-		SecretKey:         secretKey,
-		Expiration:        expiration,
-		RefreshExpiration: refreshExpiration,
-		Issuer:            issuer,
+		SecretKey:             config.SecretKey,
+		AccessTokenExpiration: config.AccessTokenExpiration,
+		RefreshExpiration:     config.RefreshTokenExpiration,
+		Issuer:                config.Issuer,
 	}
 }
 
-// GenerateAccessToken Access Token 생성
+// GenerateAccessToken Access Token 생성 (기존 호환성)
 func (j *JWTUtil) GenerateAccessToken(
 	userNo int64,
 	userID string,
@@ -56,7 +81,7 @@ func (j *JWTUtil) GenerateAccessToken(
 	additionalClaims map[string]interface{},
 ) (string, error) {
 	now := time.Now()
-	expiryTime := now.Add(j.Expiration)
+	expiryTime := now.Add(j.AccessTokenExpiration)
 
 	// auth를 문자열 배열로 변환
 	var authStrings []string
@@ -173,6 +198,85 @@ func (j *JWTUtil) ParseToken(tokenString string) (*Claims, error) {
 	}
 
 	return nil, fmt.Errorf("invalid token")
+}
+
+// GenerateAccessTokenFromClaims TokenClaims로부터 Access Token 생성
+func (j *JWTUtil) GenerateAccessTokenFromClaims(tokenClaims TokenClaims) (string, error) {
+	now := time.Now()
+	expiryTime := now.Add(j.AccessTokenExpiration)
+
+	// accessibleAPI가 비어있으면 "all"로 설정
+	if len(tokenClaims.AccessibleAPI) == 0 {
+		tokenClaims.AccessibleAPI = []string{"all"}
+	}
+
+	claims := Claims{
+		UserNo:        tokenClaims.UserNo,
+		ServiceID:     tokenClaims.ServiceID,
+		Role:          tokenClaims.Role,
+		NickName:      tokenClaims.NickName,
+		Provider:      tokenClaims.Provider,
+		AccessibleAPI: tokenClaims.AccessibleAPI,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   tokenClaims.UserID,
+			Issuer:    j.Issuer,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expiryTime),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(j.SecretKey))
+}
+
+// GenerateRefreshTokenFromClaims RefreshTokenClaims로부터 Refresh Token 생성
+func (j *JWTUtil) GenerateRefreshTokenFromClaims(refreshClaims RefreshTokenClaims) (string, error) {
+	now := time.Now()
+	expiryTime := now.Add(j.RefreshExpiration)
+
+	claims := Claims{
+		UserNo:    refreshClaims.UserNo,
+		TokenType: "refresh",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   refreshClaims.UserID,
+			Issuer:    j.Issuer,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expiryTime),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(j.SecretKey))
+}
+
+// ValidateAccessToken Access Token 검증
+func (j *JWTUtil) ValidateAccessToken(tokenString string) (*Claims, error) {
+	claims, err := j.ParseToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+
+	// Access Token인지 확인 (TokenType이 없거나 "access"인 경우)
+	if claims.TokenType != "" && claims.TokenType != "access" {
+		return nil, fmt.Errorf("not an access token")
+	}
+
+	return claims, nil
+}
+
+// ValidateRefreshToken Refresh Token 검증
+func (j *JWTUtil) ValidateRefreshToken(tokenString string) (*Claims, error) {
+	claims, err := j.ParseToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+
+	// Refresh Token인지 확인
+	if claims.TokenType != "refresh" {
+		return nil, fmt.Errorf("not a refresh token")
+	}
+
+	return claims, nil
 }
 
 // ExtractUserNo userNo 추출

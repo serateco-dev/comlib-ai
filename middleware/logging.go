@@ -4,6 +4,7 @@ package middleware
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log"
 	"time"
@@ -142,7 +143,7 @@ func (w *responseBodyWriter) Write(b []byte) (int, error) {
 
 // formatLogEntry 로그 엔트리 포맷팅
 func formatLogEntry(param gin.LogFormatterParams) string {
-	return log.Sprintf("[%s] %s %s %d %s %s %s\n",
+	return fmt.Sprintf("[%s] %s %s %d %s %s %s\n",
 		param.TimeStamp.Format("2006/01/02 - 15:04:05"),
 		param.ClientIP,
 		param.Method,
